@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from app import store, web
 from app.modules.m7_migration import service
+from app.modules.m8_confirm import service as confirm_service
 
 router = APIRouter()
 
@@ -24,6 +25,7 @@ def _csv(body: str, filename: str) -> Response:
 @router.get("/spec", response_class=HTMLResponse)
 def spec_page(request: Request):
     run = store.latest_run()
+    confirmations = confirm_service.run_view(run) if run else {}
     return web.page_or_404(
         request,
         "spec.html",
@@ -33,6 +35,7 @@ def spec_page(request: Request):
         ledger=(run or {}).get("ledger") or {},
         aliases=((run or {}).get("mapping") or {}).get("aliases") or [],
         warnings=(run or {}).get("warnings") or [],
+        confirmations=confirmations,
     )
 
 

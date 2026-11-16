@@ -94,6 +94,41 @@
   </div>
 </section>
 
+<section class="doc-section">
+  <h2><span class="clause">4</span>下游迁移确认</h2>
+  {% if confirmations.get('rows') %}
+  <p class="lede">已确认 <span class="mono">{{ confirmations.summary.confirmed or 0 }}</span>　未确认 <span class="mono">{{ confirmations.summary.pending or 0 }}</span>　旧引用被拒 <span class="mono">{{ confirmations.summary.blocked_old or 0 }}</span> 处　<a class="link" href="/migration">去确认</a></p>
+  <div class="wrap-scroll">
+    <table>
+      <thead><tr><th>下游</th><th>状态</th><th class="num">可用 / 登记</th><th class="num">旧引用被拒</th><th class="num">断链</th><th>被拒引用</th></tr></thead>
+      <tbody>
+        {% for row in confirmations.rows %}
+        <tr>
+          <td class="name">{{ row.name }}</td>
+          <td>
+            {% if row.state == 'confirmed' %}<span class="st st-ok">已确认</span>
+            {% elif row.state == 'retracted' %}<span class="st st-warn">已撤回</span>
+            {% elif row.state == 'invalid' %}<span class="st st-bad">确认失效</span>
+            {% else %}<span class="st st-info">未确认</span>{% endif %}
+          </td>
+          <td class="num">{{ row.usable }}/{{ row.refs }}</td>
+          <td class="num">{{ row.blocked_old }}</td>
+          <td class="num">{{ row.broken }}</td>
+          <td class="reason">
+            {% for item in row.blocked %}
+            <span class="chip chip-bad" title="{{ item.detail }}">{{ item.ref }} · {{ item.reason|reason }}</span>
+            {% else %}—{% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">没有下游登记。</p>
+  {% endif %}
+</section>
+
 <aside class="notes">
   <ol class="footnotes">
     <li>深度按最短跳数算，同名节点只出现一次。<a class="back" href="#main">↩</a></li>

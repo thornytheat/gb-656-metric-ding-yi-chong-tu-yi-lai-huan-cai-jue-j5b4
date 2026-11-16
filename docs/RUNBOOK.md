@@ -24,6 +24,7 @@ docker compose exec -T app python -m pytest -q
 4. `/impact` 看受影响节点、环、断链、单边登记。
 5. `/batches` 点「跑一次」，再点「陈旧提交」验证 409。
 6. `/spec` 导出迁移单与三份账目 CSV。
+7. `/migration` 逐个下游确认迁移；确认后旧引用被拒，未确认的仍可用别名。撤回确认恢复该下游的旧引用兼容。
 
 ## 4 重建数据库
 
@@ -46,10 +47,16 @@ docker compose up -d --build
 | POST | `/api/types/compare` | 两个类型写法比较 |
 | POST | `/api/compat` | 一对版本的两向判定 |
 | GET | `/api/mapping` | 映射表、别名、冲突 |
-| GET | `/api/impact` | 影响面、环、断链 |
+| GET | `/api/impact` | 影响面、环、断链、下游确认状态 |
 | POST | `/api/runs` | 跑批次，可带基线版本号与生效区间 |
 | GET | `/api/batches` | 批次历史 |
 | GET | `/api/reconcile` | 四账对账 |
+| GET | `/api/migration` | 逐下游确认状态、实际可用引用与拒绝原因 |
+| POST | `/api/migration/{consumer}/confirm` | 确认单个下游，需带 `state_version`，可选 `request_id` |
+| POST | `/api/migration/{consumer}/retract` | 撤回单个下游的确认 |
+| POST | `/api/migration/confirm` | 批量确认，`consumers` 可带各自版本 |
+| POST | `/api/migration/retract` | 批量撤回 |
+| GET | `/api/migration/events` | 确认审计记录，可按 `consumer` 过滤 |
 | GET | `/api/export/spec.md` | 迁移单 Markdown |
 | GET | `/api/export/fields.csv` | 字段账 CSV |
 | GET | `/api/export/refs.csv` | 引用账 CSV |
@@ -61,6 +68,8 @@ docker compose up -d --build
 | 现象 | 原因 | 处置 |
 |---|---|---|
 | 409 `VERSION_STALE` | 提交带的基线序号落后 | 去掉 `base_version_seq` 或填当前序号 |
+| 409 `CONFIRM_STALE` | 确认 / 撤回带的状态版本落后 | 刷新页面取当前 `state_version` 再提交 |
+| 409 `CONFIRM_CONFLICT` | 撤回一个未确认的下游，或请求号已用于另一动作 | 看 `detail.reason`，先确认再撤回 |
 | 400 `WINDOW_INVERTED` | 生效区间起点不早于终点 | 检查 `effective_from` / `effective_to` |
 | 400 `BAD_INPUT` | 文件名、参数或 JSON 结构不对 | 看返回的 `detail` |
 | 404 `NOT_FOUND` | 还没跑过批次 | 先在 `/batches` 点「跑一次」 |

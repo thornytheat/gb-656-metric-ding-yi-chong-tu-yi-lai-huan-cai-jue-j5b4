@@ -1,8 +1,9 @@
 # 深度登记 metricgraph
 
-- 规模：中型（7 个功能模块，76 个文件，65 条测试）
+- 规模：中型（8 个功能模块，80 个文件，115 条测试）
 - 核心规则：同名同版本指标先做表达式稳定签名，再按依赖图检测环并裁决生效版本。
-- 使用者与工作流：分析治理组在指标发布前复核定义冲突、缺依赖、依赖环与版本重叠。
+- 使用者与工作流：分析治理组在指标发布前复核定义冲突、缺依赖、依赖环与版本重叠；
+  迁移后逐个下游确认，确认后旧引用被拒，未迁完的下游仍按别名运行。
 
 ## 功能模块
 
@@ -15,6 +16,7 @@
 | M5 影响面 | 看受影响的下游节点、环、断链、单边登记 | GET /api/impact | `app/modules/m5_impact/handler.py` `app/modules/m5_impact/service.py` `app/modules/m5_impact/closure.py` `app/modules/m5_impact/cycle.py` `app/modules/m5_impact/broken.py` | `tests/test_m5_impact.py` |
 | M6 版本批次 | 跑批次、看历史、验陈旧拒绝与区间重叠 | POST /api/runs | `app/modules/m6_batches/handler.py` `app/modules/m6_batches/service.py` `app/modules/m6_batches/window.py` `app/modules/m6_batches/guard.py` `app/modules/m6_batches/history.py` | `tests/test_m6_batches.py` |
 | M7 指标目录 | 导出一份定义、依赖与状态清单 | GET /api/export/catalog.csv | `app/modules/m7_migration/handler.py` `app/modules/m7_migration/service.py` `app/modules/m7_migration/csv_out.py` `app/modules/m7_migration/ledger.py` | `tests/test_m7_migration.py` |
+| M8 迁移确认 | 逐下游确认 / 撤回，看实际可用引用与拒绝原因 | GET /api/migration | `app/modules/m8_confirm/handler.py` `app/modules/m8_confirm/service.py` `app/modules/m8_confirm/refs.py` `app/modules/m8_confirm/csv_out.py` | `tests/test_m8_confirm.py` |
 
 ## 陷阱登记
 
@@ -30,6 +32,10 @@
 | TRAP-22 | 同一字段被连续改过两次名 | 只认最近一跳，最早的名字解析不到 | 跨版本改名链一路解析到底 | `app/modules/m4_mapping/rename.py` | `tests/test_m4_mapping.py::test_trap22_alias_chain_resolves_multi_hop` |
 | TRAP-25 | 两个版本生效区间重叠 | 取到哪版看运气 | 半开区间比较，重叠直接标记警告 | `app/modules/m6_batches/window.py` | `tests/test_m6_batches.py::test_trap25_overlap_flagged_but_adjacent_clean` |
 | TRAP-26 | 基于旧版本号提交 | 后提交无条件覆盖新结果 | 版本号乐观锁，基线落后即 409 | `app/modules/m6_batches/guard.py` | `tests/test_m6_batches.py::test_trap26_stale_submission_rejected` |
+| TRAP-27 | 已确认下游改回旧名字继续跑 | 只要别名还在就放行，旧引用悄悄回流 | 确认后该下游的旧引用一律 `OLD_REF_BLOCKED`，未确认的仍可用 | `app/modules/m8_confirm/refs.py` | `tests/test_m8_confirm.py::test_confirm_blocks_old_refs_only_for_that_consumer` |
+| TRAP-28 | 确认后又跑了新批次或改了登记 | 旧确认仍按已确认放行，约束张冠李戴 | 确认绑定批次号、引用集合摘要与字段解析摘要，任一变化即失效，旧引用恢复兼容 | `app/modules/m8_confirm/service.py` | `tests/test_m8_confirm.py::test_new_run_invalidates_confirmations_but_keeps_record` |
+| TRAP-29 | 确认与撤回并发、同一版本号 | 后写覆盖前写，账上两笔都成 | 单事务内比对 `state_version`，落后即 409，状态与事件同回滚 | `app/store.py` `apply_confirmation` | `tests/test_m8_confirm.py::test_concurrent_confirms_one_wins_the_stale_one_is_rejected` |
+| TRAP-30 | 写事件失败后重试 | 状态落了、账没记，重试再记一笔 | 同事务写入；带相同的 `request_id` 重试只回放不重复记账 | `app/store.py` `apply_confirmation` | `tests/test_m8_confirm.py::test_write_failure_rolls_back_and_retry_books_once` |
 
 ## 对账规则
 
@@ -45,4 +51,6 @@
 - DDL 只解析 `CREATE TABLE` 的列定义，不处理分区、约束、索引与 `ALTER`。
 - 类型格只覆盖数值、字符、时间、布尔四族；映射表、数组、结构体一律算 `unknown`，保守判破坏。
 - 生效区间重叠只标记不阻断，最终以版本序号为准。
+- 迁移确认只约束本系统登记的引用；下游在系统外卖的视图不归这里管。
+- 确认状态挂在 `consumer` 名字上，改名会被当成新下游，旧记录留作历史。
 - 打印页脚用 `counter(page)`，Chrome 打印预览不渲染该计数。

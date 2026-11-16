@@ -31,7 +31,62 @@ const ACTIONS = {
     }
     return `比较完成 ${result.change}`;
   },
+
+  async confirm(button) {
+    return migrationAction(button, 'confirm');
+  },
+
+  async retract(button) {
+    return migrationAction(button, 'retract');
+  },
+
+  async 'confirm-all'() {
+    const rows = migrationRows()
+      .filter((row) => row.dataset.state !== 'confirmed');
+    if (!rows.length) return '没有可确认的下游';
+    return migrationBatch('confirm', rows);
+  },
+
+  async 'retract-all'() {
+    const rows = migrationRows()
+      .filter((row) => row.dataset.state === 'confirmed');
+    if (!rows.length) return '没有已确认的下游';
+    return migrationBatch('retract', rows);
+  },
 };
+
+function migrationRows() {
+  return Array.from(document.querySelectorAll('[data-migration-table] tbody tr[data-consumer]'));
+}
+
+function versionOf(row) {
+  return Number(row.dataset.version || 0);
+}
+
+async function migrationAction(button, action) {
+  const row = button.closest('tr[data-consumer]');
+  if (!row) return '找不到下游行';
+  const name = encodeURIComponent(row.dataset.consumer);
+  const result = await request(`/api/migration/${name}/${action}`, {
+    state_version: versionOf(row),
+  });
+  return result.changed ? (action === 'confirm' ? '已确认' : '已撤回') : '状态未变';
+}
+
+async function migrationBatch(action, rows) {
+  const body = {
+    consumers: rows.map((row) => ({
+      consumer: row.dataset.consumer,
+      state_version: versionOf(row),
+    })),
+  };
+  const result = await request(`/api/migration/${action}`, body);
+  const failed = result.failed
+    ? `，失败：${result.results.filter((item) => !item.ok)
+      .map((item) => `${item.consumer}(${item.error})`).join('、')}`
+    : '';
+  return `${action === 'confirm' ? '确认' : '撤回'} ${result.ok} 个${failed}`;
+}
 
 async function request(url, body) {
   const response = await fetch(url, {
@@ -72,7 +127,8 @@ document.addEventListener('click', async (event) => {
   try {
     const message = await handler(button);
     flash(target, message || '完成', false);
-    if (name === 'run') {
+    if (name === 'run' || name === 'confirm' || name === 'retract'
+        || name === 'confirm-all' || name === 'retract-all') {
       setTimeout(() => window.location.reload(), 400);
     }
   } catch (error) {

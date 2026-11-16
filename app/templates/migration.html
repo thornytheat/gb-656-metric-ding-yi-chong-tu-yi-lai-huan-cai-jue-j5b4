@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}迁移确认 · metricgraph{% endblock %}
+{% block body %}
+<section class="doc-section">
+  <h1>迁移确认</h1>
+  <p class="lede">下游 <span class="mono">{{ summary.consumers or 0 }}</span>　已确认 <span class="mono">{{ summary.confirmed or 0 }}</span>　未确认 <span class="mono">{{ summary.pending or 0 }}</span>　撤回 <span class="mono">{{ summary.retracted or 0 }}</span>　确认失效 <span class="mono">{{ summary.invalid or 0 }}</span></p>
+  <div class="actions">
+    <button type="button" data-action="confirm-all">确认全部未确认下游</button>
+    <button type="button" class="ghost" data-action="retract-all">撤回全部确认</button>
+    <a class="btn ghost" href="/api/migration/state.csv">状态 CSV</a>
+    <a class="btn ghost" href="/api/migration/refs.csv">引用可用性 CSV</a>
+    <span class="flash" data-flash></span>
+  </div>
+  <p class="lede">
+    可用引用 <span class="mono">{{ summary.usable or 0 }}</span> 处　被拒 <span class="mono">{{ summary.blocked or 0 }}</span> 处（旧引用 <span class="mono">{{ summary.blocked_old or 0 }}</span>　断链 <span class="mono">{{ summary.broken or 0 }}</span>）
+    　撤场 {% if summary.retirement.can_retire %}<span class="st st-ok">可撤</span>{% else %}<span class="st st-warn">仍有下游未确认</span>{% endif %}
+  </p>
+  {% if empty %}
+  <p class="empty">还没有批次。</p>
+  {% else %}
+
+  <div class="wrap-scroll">
+    <table data-migration-table>
+      <caption>下游逐个确认<sup class="fn">1</sup></caption>
+      <thead>
+        <tr>
+          <th>下游</th><th>类型</th><th>状态</th><th class="num">引用</th>
+          <th>实际可用引用</th><th>拒绝原因</th><th class="num">版本</th>
+          <th>绑定批次</th><th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr data-consumer="{{ row.name }}" data-version="{{ row.state_version }}" data-state="{{ row.state }}">
+          <td class="name">{{ row.name }}</td>
+          <td>{{ row.kind }}</td>
+          <td>
+            {% if row.state == 'confirmed' %}<span class="st st-ok">已确认</span>
+            {% elif row.state == 'retracted' %}<span class="st st-warn">已撤回</span>
+            {% elif row.state == 'invalid' %}<span class="st st-bad">确认失效</span>
+            {% else %}<span class="st st-info">未确认</span>{% endif %}
+            {% if row.binding and not row.binding.ok %}
+            <div class="reason"><span class="code">{{ row.binding.reason|reason }}</span></div>
+            <div class="truncate" title="{{ row.binding.detail }}">{{ row.binding.detail }}</div>
+            {% endif %}
+          </td>
+          <td class="num">{{ row.counts.usable }}/{{ row.counts.refs }}</td>
+          <td class="reason">
+            {% for item in row.usable %}
+            <span class="chip {{ 'chip-info' if item.via == 'direct' else 'chip-warn' }}" title="{{ item.ref }}">{{ item.ref }}{% if item.via != 'direct' %} → {{ item.new_name }}{% endif %}</span>
+            {% else %}—{% endfor %}
+          </td>
+          <td class="reason">
+            {% for item in row.blocked %}
+            <span class="chip chip-bad" title="{{ item.detail }}">{{ item.ref }} · {{ item.reason|reason }}</span>
+            {% else %}—{% endfor %}
+          </td>
+          <td class="num">{{ row.state_version }}</td>
+          <td class="name truncate" title="{{ row.run_id or '—' }}">
+            {% if row.state == 'confirmed' %}{{ row.run_id }} #{{ row.version_seq }}{% elif row.run_id %}{{ row.run_id }} #{{ row.version_seq }}{% else %}—{% endif %}
+          </td>
+          <td class="actions">
+            {% if row.state == 'confirmed' %}
+            <button type="button" class="ghost" data-action="retract" data-consumer="{{ row.name }}">撤回</button>
+            {% else %}
+            <button type="button" data-action="confirm" data-consumer="{{ row.name }}">确认</button>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9">没有下游登记。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="doc-section">
+  <h2><span class="clause">2</span>状态口径</h2>
+  <dl class="ledger">
+    <div><dt>已确认</dt><dd>{{ summary.confirmed or 0 }}<span class="unit">个</span></dd></div>
+    <div><dt>未确认</dt><dd>{{ summary.pending or 0 }}<span class="unit">个</span></dd></div>
+    <div><dt>已撤回</dt><dd>{{ summary.retracted or 0 }}<span class="unit">个</span></dd></div>
+    <div><dt>确认失效</dt><dd>{{ summary.invalid or 0 }}<span class="unit">个</span></dd></div>
+    <div><dt>在用旧名的下游</dt><dd>{{ summary.retirement.old_name_consumers|length }}<span class="unit">个</span></dd></div>
+    <div><dt>还钉子（未确认）</dt><dd>{{ summary.retirement.pinned|length }}<span class="unit">个</span></dd></div>
+  </dl>
+  <p class="lede">未确认或已撤回的下游，旧引用经别名继续可用；确认迁移后，旧引用一律拒绝，只留新字段的引用。</p>
+  {% if summary.retirement.pinned %}
+  <p class="lede">仍未确认的下游：<span class="mono">{{ summary.retirement.pinned|join('，') }}</span></p>
+  {% endif %}
+</section>
+
+<section class="doc-section">
+  <h2><span class="clause">3</span>最近确认记录</h2>
+  {% if events %}
+  <div class="wrap-scroll">
+    <table>
+      <thead><tr><th>时间</th><th>下游</th><th>动作</th><th class="num">版本</th><th>批次</th><th>请求号</th></tr></thead>
+      <tbody>
+        {% for item in events %}
+        <tr>
+          <td class="name">{{ item.created_at|ts }}</td>
+          <td class="name">{{ item.consumer }}</td>
+          <td>{% if item.action == 'confirm' %}<span class="st st-ok">确认</span>{% else %}<span class="st st-warn">撤回</span>{% endif %}</td>
+          <td class="num">{{ item.state_version }}</td>
+          <td class="name">{{ item.run_id }} #{{ item.version_seq }}</td>
+          <td class="name truncate" title="{{ item.request_id or '—' }}">{{ item.request_id or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">还没有确认记录。</p>
+  {% endif %}
+</section>
+
+<aside class="notes">
+  <ol class="footnotes">
+    <li>引用按身份解析：名字还在但换了身份算断链，不悄悄绑到新列。<a class="back" href="#main">↩</a></li>
+    <li>确认绑定批次与引用内容，任一变化即失效，旧引用恢复可用。<a class="back" href="#main">↩</a></li>
+  </ol>
+</aside>
+{% endblock %}

@@ -48,6 +48,22 @@ class Conflict(FieldmapError):
     label = "记录冲突"
 
 
+class ConfirmStale(FieldmapError):
+    """确认 / 撤回带的状态版本落后：并发下有别的写先落地。"""
+
+    status = 409
+    code = "CONFIRM_STALE"
+    label = "确认版本已过期"
+
+
+class ConfirmConflict(FieldmapError):
+    """确认条件不成立：批次已更新、重复撤回等。"""
+
+    status = 409
+    code = "CONFIRM_CONFLICT"
+    label = "确认状态冲突"
+
+
 def install(app: FastAPI) -> None:
     @app.exception_handler(FieldmapError)
     async def _handle_domain(_: Request, exc: FieldmapError) -> JSONResponse:

@@ -39,6 +39,36 @@
 </section>
 
 <section class="doc-section">
+  <h2><span class="clause">5</span>下游迁移确认</h2>
+  {% if confirmations.get('rows') %}
+  <p class="lede">已确认 <span class="mono">{{ confirmations.summary.confirmed or 0 }}</span> / {{ confirmations.summary.consumers or 0 }}　撤场 {% if confirmations.summary.retirement.can_retire %}<span class="st st-ok">可撤</span>{% else %}<span class="st st-warn">仍有下游未确认</span>{% endif %}</p>
+  <div class="wrap-scroll">
+    <table>
+      <thead><tr><th>下游</th><th>状态</th><th class="num">可用 / 登记</th><th class="num">旧引用被拒</th><th class="num">断链</th></tr></thead>
+      <tbody>
+        {% for row in confirmations.rows %}
+        <tr>
+          <td class="name">{{ row.name }}</td>
+          <td>
+            {% if row.state == 'confirmed' %}<span class="st st-ok">已确认</span>
+            {% elif row.state == 'retracted' %}<span class="st st-warn">已撤回</span>
+            {% elif row.state == 'invalid' %}<span class="st st-bad">确认失效</span>
+            {% else %}<span class="st st-info">未确认</span>{% endif %}
+          </td>
+          <td class="num">{{ row.usable }}/{{ row.refs }}</td>
+          <td class="num">{{ row.blocked_old }}</td>
+          <td class="num">{{ row.broken }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">没有下游登记。</p>
+  {% endif %}
+</section>
+
+<section class="doc-section">
   <h2><span class="clause">6</span>回滚</h2>
   <ol class="rollback">
     <li>先建兼容视图，旧名字继续可读。</li>

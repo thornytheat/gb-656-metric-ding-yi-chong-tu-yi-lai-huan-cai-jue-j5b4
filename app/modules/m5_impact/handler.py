@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from app import store, web
+from app.modules.m8_confirm import service as confirm_service
 
 router = APIRouter()
 
@@ -24,6 +25,7 @@ def impact_page(request: Request):
         one_sided=payload.get("one_sided") or [],
         broken=payload.get("broken") or [],
         summary=payload.get("summary") or {},
+        confirmations=confirm_service.run_view(run) if run else {},
     )
 
 
@@ -40,4 +42,5 @@ def impact_api():
         "one_sided": payload.get("one_sided") or [],
         "broken": payload.get("broken") or [],
         "summary": payload.get("summary") or {},
+        "confirmations": confirm_service.run_view(run),
     }
